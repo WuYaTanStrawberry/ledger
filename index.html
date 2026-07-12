@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>🍓 草莓園記帳</title>
+<meta name="theme-color" content="#d6336c">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- 登入 / 首次設定密碼 -->
+<div id="loginView" class="view hidden">
+  <div class="login-box card">
+    <div class="login-logo">🍓</div>
+    <h1>草莓園記帳</h1>
+    <p id="loginHint" class="muted">請輸入密碼</p>
+    <input type="password" id="pwInput" placeholder="密碼" autocomplete="current-password">
+    <input type="password" id="pwInput2" class="hidden" placeholder="再輸入一次密碼" autocomplete="new-password">
+    <button id="loginBtn" class="btn primary wide">登入</button>
+    <p id="loginErr" class="err center"></p>
+  </div>
+</div>
+
+<!-- 主畫面 -->
+<div id="mainView" class="view hidden">
+  <header>
+    <h1>🍓 記帳</h1>
+    <select id="seasonSel" aria-label="選擇草莓季"></select>
+    <button id="settingsBtn" class="icon-btn" aria-label="設定">⚙️</button>
+  </header>
+
+  <section class="stats">
+    <div class="stat card">
+      <div class="stat-label">本季營收</div>
+      <div class="stat-val" id="stRevenue">–</div>
+    </div>
+    <div class="stat card">
+      <div class="stat-label">本季銷量</div>
+      <div class="stat-val" id="stWeight">–</div>
+      <div class="stat-sub" id="stWeightSub"></div>
+    </div>
+    <div class="stat card">
+      <div class="stat-label">營業天數</div>
+      <div class="stat-val" id="stDays">–</div>
+    </div>
+    <div class="stat card">
+      <div class="stat-label">日均營收</div>
+      <div class="stat-val" id="stAvg">–</div>
+      <div class="stat-sub" id="stBest"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 id="entryTitle">📝 今日記帳</h2>
+    <div class="field">
+      <label for="fDate">日期</label>
+      <input type="date" id="fDate">
+    </div>
+    <div class="field">
+      <label for="fRevenue">營收(元)</label>
+      <input type="number" id="fRevenue" min="0" step="1" placeholder="例:12000" inputmode="numeric">
+    </div>
+    <div class="field">
+      <label for="fWeight">賣出重量</label>
+      <div class="weight-row">
+        <input type="number" id="fWeight" min="0" step="0.1" placeholder="0" inputmode="decimal">
+        <div class="unit-toggle">
+          <button type="button" id="unitJin" class="unit">台斤</button>
+          <button type="button" id="unitKg" class="unit">公斤</button>
+        </div>
+      </div>
+      <div class="muted small" id="weightHint"></div>
+    </div>
+    <div class="field">
+      <label for="fNote">備註</label>
+      <input type="text" id="fNote" maxlength="200" placeholder="(可不填)例:宅配 3 箱">
+    </div>
+    <button id="saveBtn" class="btn primary wide">💾 儲存</button>
+    <p id="entryHint" class="muted small center"></p>
+  </section>
+
+  <section class="card">
+    <h2>📊 每月統計</h2>
+    <div id="chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>📋 記帳明細</h2>
+    <div id="recordList"></div>
+  </section>
+
+  <p class="footer muted center">舞夜天高架草莓園・記帳系統</p>
+</div>
+
+<!-- 設定彈窗 -->
+<div id="settingsModal" class="modal hidden">
+  <div class="modal-box card">
+    <h2>⚙️ 設定</h2>
+    <div class="field">
+      <label for="newPw">變更密碼(至少 4 個字)</label>
+      <input type="password" id="newPw" autocomplete="new-password">
+    </div>
+    <button id="changePwBtn" class="btn primary wide">變更密碼</button>
+    <button id="logoutBtn" class="btn wide">🚪 登出</button>
+    <button id="closeSettingsBtn" class="btn wide ghost">關閉</button>
+  </div>
+</div>
+
+<div id="loadingOverlay" class="hidden">
+  <div class="lo-box"><div class="lo-berry">🍓</div><div class="lo-text">處理中,請稍候…</div></div>
+</div>
+<div id="toast" class="hidden"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

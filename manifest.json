@@ -1,0 +1,11 @@
+{
+  "name": "草莓園記帳",
+  "short_name": "草莓記帳",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#fff5f7",
+  "theme_color": "#d6336c",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
