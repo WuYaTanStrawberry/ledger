@@ -42,7 +42,7 @@
       <div class="stat-val" id="stRevenue">–</div>
     </div>
     <div class="stat card">
-      <div class="stat-label">本季銷量</div>
+      <div class="stat-label">本季產量</div>
       <div class="stat-val" id="stWeight">–</div>
       <div class="stat-sub" id="stWeightSub"></div>
     </div>
@@ -58,24 +58,48 @@
   </section>
 
   <section class="card">
-    <h2 id="entryTitle">📝 今日記帳</h2>
+    <h2 id="entryTitle">📝 記一筆</h2>
     <div class="field">
       <label for="fDate">日期</label>
       <input type="date" id="fDate">
     </div>
+    <div class="field-row">
+      <div class="field grow">
+        <label for="fCat">分類</label>
+        <select id="fCat">
+          <option value="觀光採果">🧺 觀光採果</option>
+          <option value="宅配">📦 宅配</option>
+          <option value="盤商">🚚 盤商</option>
+        </select>
+      </div>
+      <div class="field grow hidden" id="gradeField">
+        <label for="fGrade">分級</label>
+        <select id="fGrade">
+          <option value="1號">1號</option>
+          <option value="2號">2號</option>
+          <option value="3號">3號</option>
+          <option value="4號">4號</option>
+          <option value="5號">5號</option>
+        </select>
+      </div>
+    </div>
     <div class="field">
-      <label for="fRevenue">營收(元)</label>
+      <label for="fPrice">單價(元)</label>
+      <div class="weight-row">
+        <input type="number" id="fPrice" min="0" step="1" placeholder="例:350" inputmode="decimal">
+        <div class="unit-toggle">
+          <button type="button" id="unitJin" class="unit">/台斤</button>
+          <button type="button" id="unitKg" class="unit">/公斤</button>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="fRevenue">總收入(元)</label>
       <input type="number" id="fRevenue" min="0" step="1" placeholder="例:12000" inputmode="numeric">
     </div>
     <div class="field">
-      <label for="fWeight">賣出重量</label>
-      <div class="weight-row">
-        <input type="number" id="fWeight" min="0" step="0.1" placeholder="0" inputmode="decimal">
-        <div class="unit-toggle">
-          <button type="button" id="unitJin" class="unit">台斤</button>
-          <button type="button" id="unitKg" class="unit">公斤</button>
-        </div>
-      </div>
+      <label for="fWeight"><span id="weightLabel">產量(台斤)</span></label>
+      <input type="number" id="fWeight" min="0" step="0.1" placeholder="填了單價和總收入會自動算" inputmode="decimal">
       <div class="muted small" id="weightHint"></div>
     </div>
     <div class="field">
@@ -83,7 +107,13 @@
       <input type="text" id="fNote" maxlength="200" placeholder="(可不填)例:宅配 3 箱">
     </div>
     <button id="saveBtn" class="btn primary wide">💾 儲存</button>
+    <button id="cancelEditBtn" class="btn wide hidden">取消編輯</button>
     <p id="entryHint" class="muted small center"></p>
+  </section>
+
+  <section class="card">
+    <h2>🧺 分類統計</h2>
+    <div id="catStats"></div>
   </section>
 
   <section class="card">

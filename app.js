@@ -5,6 +5,16 @@ var GAS = window.CONFIG.gasUrl;
 var JIN_KG = 0.6; // 1 台斤 = 0.6 公斤
 var $ = function (id) { return document.getElementById(id); };
 
+var CATS = ['觀光採果', '宅配', '盤商'];
+var LEGACY_CAT = '未分類';
+var GRADES = ['1號', '2號', '3號', '4號', '5號'];
+var CAT_META = {
+  '觀光採果': { emoji: '🧺', cls: 'c-pick' },
+  '宅配':     { emoji: '📦', cls: 'c-ship' },
+  '盤商':     { emoji: '🚚', cls: 'c-whole' },
+  '未分類':   { emoji: '📄', cls: 'c-none' }
+};
+
 var state = {
   pw: localStorage.getItem('ledger_pw') || '',
   unit: localStorage.getItem('ledger_unit') || 'jin', // jin=台斤, kg=公斤
@@ -12,12 +22,18 @@ var state = {
   today: '',
   season: null,
   seasons: [],
-  data: null
+  data: null,
+  editingId: null
 };
 
 // ---------- 小工具 ----------
 
 function fmt(n) { return Number(n || 0).toLocaleString('zh-TW'); }
+
+// 私密瀏覽模式下 setItem 可能丟例外,一律包起來
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function round1(n) { return Math.round(n * 10) / 10; }
+function round2(n) { return Math.round(n * 100) / 100; }
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, function (c) {
@@ -25,15 +41,22 @@ function esc(s) {
   });
 }
 
-function kgToUnit(kg) { return state.unit === 'jin' ? kg / JIN_KG : kg; }
-function unitName() { return state.unit === 'jin' ? '台斤' : '公斤'; }
-function weightStr(kg) {
-  var v = kgToUnit(kg);
-  return (Math.round(v * 10) / 10).toLocaleString('zh-TW') + ' ' + unitName();
+function kgToUnit(kg, unit) { return (unit || state.unit) === 'jin' ? kg / JIN_KG : kg; }
+function unitToKg(w, unit) { return (unit || state.unit) === 'jin' ? w * JIN_KG : w; }
+function unitName(unit) { return (unit || state.unit) === 'jin' ? '台斤' : '公斤'; }
+function weightStr(kg, unit) {
+  return round1(kgToUnit(kg, unit)).toLocaleString('zh-TW') + ' ' + unitName(unit);
 }
 function altWeightStr(kg) {
-  if (state.unit === 'jin') return '= ' + (Math.round(kg * 100) / 100).toLocaleString('zh-TW') + ' 公斤';
-  return '= ' + (Math.round(kg / JIN_KG * 10) / 10).toLocaleString('zh-TW') + ' 台斤';
+  if (state.unit === 'jin') return '= ' + round2(kg).toLocaleString('zh-TW') + ' 公斤';
+  return '= ' + round1(kg / JIN_KG).toLocaleString('zh-TW') + ' 台斤';
+}
+
+function catMeta(cat) { return CAT_META[cat] || CAT_META[LEGACY_CAT]; }
+function chipHtml(cat, grade) {
+  var m = catMeta(cat);
+  return '<span class="chip ' + m.cls + '">' + m.emoji + ' ' + esc(cat) +
+    (grade ? '<b class="grade">' + esc(grade) + '</b>' : '') + '</span>';
 }
 
 function dateLabel(d) {
@@ -116,7 +139,7 @@ function loginWith(pw) {
   api({ action: 'init', pw: pw }).then(function (r) {
     if (!r.ok) { $('loginErr').textContent = r.error || '登入失敗'; return; }
     state.pw = pw;
-    localStorage.setItem('ledger_pw', pw);
+    store('ledger_pw', pw);
     showMain();
     render(r);
   });
@@ -125,7 +148,7 @@ function loginWith(pw) {
 function logout() {
   state.pw = '';
   localStorage.removeItem('ledger_pw');
-  localStorage.removeItem('ledger_cache');
+  localStorage.removeItem('ledger_cache2');
   $('settingsModal').classList.add('hidden');
   showLogin(false);
 }
@@ -137,7 +160,7 @@ function render(resp) {
   state.season = resp.season;
   state.seasons = resp.seasons;
   state.data = resp.data;
-  try { localStorage.setItem('ledger_cache', JSON.stringify(resp)); } catch (e) {}
+  store('ledger_cache2', JSON.stringify(resp));
 
   var sel = $('seasonSel');
   sel.innerHTML = state.seasons.map(function (s) {
@@ -155,25 +178,91 @@ function render(resp) {
     : '';
 
   renderUnitToggle();
+  renderCats();
   renderChart();
   renderList();
   if (!$('fDate').value) $('fDate').value = state.today;
-  prefillFromDate();
 }
 
 function renderUnitToggle() {
   $('unitJin').classList.toggle('on', state.unit === 'jin');
   $('unitKg').classList.toggle('on', state.unit === 'kg');
+  $('weightLabel').textContent = '產量(' + unitName() + ')';
+  updateWeightHint();
+}
+
+// 單價 × 總收入 → 自動算產量
+function autoCalcWeight() {
+  var price = Number($('fPrice').value) || 0;
+  var revenue = Number($('fRevenue').value) || 0;
+  if (price > 0 && revenue > 0) {
+    $('fWeight').value = round1(revenue / price);
+  }
   updateWeightHint();
 }
 
 function updateWeightHint() {
   var w = Number($('fWeight').value) || 0;
-  if (!w) { $('weightHint').textContent = ''; return; }
-  var kg = state.unit === 'jin' ? w * JIN_KG : w;
-  $('weightHint').textContent = state.unit === 'jin'
-    ? '= ' + (Math.round(kg * 100) / 100) + ' 公斤'
-    : '= ' + (Math.round(kg / JIN_KG * 10) / 10) + ' 台斤';
+  var price = Number($('fPrice').value) || 0;
+  var revenue = Number($('fRevenue').value) || 0;
+  var parts = [];
+  if (price > 0 && revenue > 0) {
+    parts.push('自動計算:$' + fmt(revenue) + ' ÷ $' + fmt(price) + ' = ' + round1(revenue / price) + ' ' + unitName());
+  }
+  if (w > 0) {
+    var kg = unitToKg(w);
+    parts.push(state.unit === 'jin'
+      ? '= ' + round2(kg) + ' 公斤'
+      : '= ' + round1(kg / JIN_KG) + ' 台斤');
+  }
+  $('weightHint').textContent = parts.join('・');
+}
+
+function onCatChange() {
+  $('gradeField').classList.toggle('hidden', $('fCat').value !== '盤商');
+}
+
+// 編輯舊資料才會出現「未分類」選項
+function ensureLegacyOption(need) {
+  var sel = $('fCat');
+  var opt = sel.querySelector('option[value="' + LEGACY_CAT + '"]');
+  if (need && !opt) {
+    opt = document.createElement('option');
+    opt.value = LEGACY_CAT;
+    opt.textContent = '📄 未分類(舊資料)';
+    sel.appendChild(opt);
+  } else if (!need && opt) {
+    opt.remove();
+  }
+}
+
+function renderCats() {
+  var cats = state.data.cats || {};
+  var grades = state.data.grades || {};
+  var el = $('catStats');
+  var order = CATS.concat(cats[LEGACY_CAT] ? [LEGACY_CAT] : []);
+  var present = order.filter(function (c) { return cats[c]; });
+  if (!present.length) {
+    el.innerHTML = '<p class="muted center small">本季還沒有紀錄</p>';
+    return;
+  }
+  var max = Math.max.apply(null, present.map(function (c) { return cats[c].revenue; }));
+  el.innerHTML = present.map(function (c) {
+    var v = cats[c];
+    var pct = max ? Math.max(2, Math.round(v.revenue / max * 100)) : 2;
+    var html = '<div class="cat-row">' +
+      '<div class="cat-head">' + chipHtml(c) +
+        '<span class="cat-nums">$' + fmt(v.revenue) + '・' + weightStr(v.kg) + '</span></div>' +
+      '<div class="bar slim"><div class="bar-fill ' + catMeta(c).cls + '" style="width:' + pct + '%"></div></div>';
+    if (c === '盤商') {
+      var gRows = GRADES.filter(function (g) { return grades[g]; }).map(function (g) {
+        return '<div class="grade-row"><span class="grade-name">' + g + '</span>' +
+          '<span>$' + fmt(grades[g].revenue) + '・' + weightStr(grades[g].kg) + '</span></div>';
+      }).join('');
+      if (gRows) html += '<div class="grade-list">' + gRows + '</div>';
+    }
+    return html + '</div>';
+  }).join('');
 }
 
 function renderChart() {
@@ -201,44 +290,82 @@ function renderList() {
     el.innerHTML = '<p class="muted center small">尚無紀錄,從上面的表單記下第一筆吧!</p>';
     return;
   }
-  el.innerHTML = rows.map(function (r) {
-    return '<div class="rec" data-date="' + r.date + '">' +
-      '<div class="rec-main">' +
-        '<div class="rec-date">' + dateLabel(r.date) + '</div>' +
-        (r.note ? '<div class="rec-note">' + esc(r.note) + '</div>' : '') +
-      '</div>' +
-      '<div class="rec-nums">' +
-        '<div class="rec-rev">$' + fmt(r.revenue) + '</div>' +
-        '<div class="rec-kg">' + (r.kg ? weightStr(r.kg) : '') + '</div>' +
-      '</div>' +
-      '<button class="rec-del" data-date="' + r.date + '" aria-label="刪除">🗑️</button>' +
-      '</div>';
+  // 按日期分組(後端已照日期新→舊排好)
+  var dates = [];
+  var byDate = {};
+  rows.forEach(function (r) {
+    if (!byDate[r.date]) { byDate[r.date] = []; dates.push(r.date); }
+    byDate[r.date].push(r);
+  });
+  el.innerHTML = dates.map(function (d) {
+    var list = byDate[d];
+    var rev = 0, kg = 0;
+    list.forEach(function (r) { rev += r.revenue; kg += r.kg; });
+    var head = '<div class="day-head"><span class="day-date">' + dateLabel(d) + '</span>' +
+      '<span class="day-sum">$' + fmt(rev) + '・' + weightStr(kg) + '</span></div>';
+    var items = list.map(function (r) {
+      var priceInfo = r.price
+        ? '<span class="rec-price">$' + fmt(r.price) + '/' + unitName(r.priceUnit) + '</span>'
+        : '';
+      return '<div class="rec" data-id="' + esc(r.id) + '">' +
+        '<div class="rec-main">' +
+          '<div class="rec-tags">' + chipHtml(r.category, r.grade) + priceInfo + '</div>' +
+          (r.note ? '<div class="rec-note">' + esc(r.note) + '</div>' : '') +
+        '</div>' +
+        '<div class="rec-nums">' +
+          '<div class="rec-rev">$' + fmt(r.revenue) + '</div>' +
+          '<div class="rec-kg">' + (r.kg ? weightStr(r.kg) : '') + '</div>' +
+        '</div>' +
+        '<button class="rec-del" data-id="' + esc(r.id) + '" aria-label="刪除">🗑️</button>' +
+        '</div>';
+    }).join('');
+    return '<div class="day-group">' + head + items + '</div>';
   }).join('');
 }
 
-// 選了日期 → 若那天已有紀錄就帶入(=修改模式)
-function prefillFromDate() {
-  var d = $('fDate').value;
-  var hit = (state.data && state.data.records || []).find(function (r) { return r.date === d; });
-  if (hit) {
-    $('fRevenue').value = hit.revenue || '';
-    $('fWeight').value = hit.kg ? Math.round(kgToUnit(hit.kg) * 10) / 10 : '';
-    $('fNote').value = hit.note || '';
-    $('entryTitle').textContent = '✏️ 修改 ' + dateLabel(d) + ' 的紀錄';
-    $('saveBtn').textContent = '💾 更新這一天';
-    $('entryHint').textContent = '這一天已有紀錄,儲存會覆蓋原本的數字';
-  } else {
-    $('entryTitle').textContent = d === state.today ? '📝 今日記帳' : '📝 記帳';
-    $('saveBtn').textContent = '💾 儲存';
-    $('entryHint').textContent = '';
-  }
-  updateWeightHint();
+// ---------- 編輯 ----------
+
+function findEntry(id) {
+  return (state.data && state.data.records || []).find(function (r) { return r.id === id; });
 }
 
-function clearFormNumbers() {
+function startEdit(id) {
+  var r = findEntry(id);
+  if (!r) return;
+  state.editingId = id;
+  state.unit = r.priceUnit === 'kg' ? 'kg' : 'jin';
+  store('ledger_unit', state.unit);
+  ensureLegacyOption(r.category === LEGACY_CAT);
+  $('fDate').value = r.date;
+  $('fCat').value = r.category;
+  onCatChange();
+  if (r.category === '盤商' && r.grade) $('fGrade').value = r.grade;
+  $('fPrice').value = r.price || '';
+  $('fRevenue').value = r.revenue || '';
+  $('fWeight').value = r.kg ? round1(kgToUnit(r.kg)) : '';
+  $('fNote').value = r.note || '';
+  $('entryTitle').textContent = '✏️ 修改 ' + dateLabel(r.date) + ' 的紀錄';
+  $('saveBtn').textContent = '💾 更新這一筆';
+  $('cancelEditBtn').classList.remove('hidden');
+  $('entryHint').textContent = '正在修改已存在的紀錄,儲存會覆蓋原本的數字';
+  renderUnitToggle();
+  refreshWeightDisplays(); // 單位可能跟著這筆切換了,同步全頁顯示
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function cancelEdit() {
+  state.editingId = null;
+  ensureLegacyOption(false);
+  if ($('fCat').value === LEGACY_CAT) { $('fCat').value = CATS[0]; onCatChange(); }
+  $('fPrice').value = '';
   $('fRevenue').value = '';
   $('fWeight').value = '';
   $('fNote').value = '';
+  $('fDate').value = state.today || $('fDate').value;
+  $('entryTitle').textContent = '📝 記一筆';
+  $('saveBtn').textContent = '💾 儲存';
+  $('cancelEditBtn').classList.add('hidden');
+  $('entryHint').textContent = '';
   updateWeightHint();
 }
 
@@ -247,31 +374,42 @@ function clearFormNumbers() {
 function save() {
   var date = $('fDate').value;
   if (!date) { toast('請選日期'); return; }
+  var category = $('fCat').value;
+  var grade = category === '盤商' ? $('fGrade').value : '';
+  var price = Number($('fPrice').value) || 0;
   var revenue = Number($('fRevenue').value) || 0;
   var w = Number($('fWeight').value) || 0;
-  if (!revenue && !w) { toast('請至少填營收或重量'); return; }
-  var kg = state.unit === 'jin' ? w * JIN_KG : w;
+  if (!revenue && !w) { toast('請至少填總收入或產量'); return; }
 
   api({
     action: 'save',
+    id: state.editingId || '',
     date: date,
+    category: category,
+    grade: grade,
+    price: price,
+    priceUnit: state.unit,
     revenue: revenue,
-    kg: Math.round(kg * 100) / 100,
+    kg: round2(unitToKg(w)),
     note: $('fNote').value.trim()
   }).then(function (r) {
     if (!r.ok) { fail(r); return; }
+    var wasEdit = !!state.editingId;
+    cancelEdit();
     render(r);
-    toast('✅ 已儲存 ' + dateLabel(date));
+    toast(wasEdit ? '✅ 已更新 ' + dateLabel(date) : '✅ 已記下 ' + dateLabel(date) + ' 一筆');
   });
 }
 
-function del(date) {
-  if (!confirm('確定要刪除 ' + dateLabel(date) + ' 的紀錄嗎?')) return;
-  api({ action: 'delete', date: date }).then(function (r) {
-    if (!r.ok) { fail(r); return; }
-    if ($('fDate').value === date) clearFormNumbers();
-    render(r);
-    toast('🗑️ 已刪除 ' + dateLabel(date));
+function del(id) {
+  var r = findEntry(id);
+  var desc = r ? dateLabel(r.date) + ' ' + r.category + (r.grade ? '(' + r.grade + ')' : '') + ' $' + fmt(r.revenue) : '這筆紀錄';
+  if (!confirm('確定要刪除 ' + desc + ' 嗎?')) return;
+  api({ action: 'delete', id: id }).then(function (resp) {
+    if (!resp.ok) { fail(resp); return; }
+    if (state.editingId === id) cancelEdit();
+    render(resp);
+    toast('🗑️ 已刪除');
   });
 }
 
@@ -282,10 +420,22 @@ function switchSeason(year) {
   });
 }
 
+function refreshWeightDisplays() {
+  if (!state.data) return;
+  renderCats();
+  renderChart();
+  renderList();
+  var t = state.data.total;
+  $('stWeight').textContent = weightStr(t.kg);
+  $('stWeightSub').textContent = t.kg ? altWeightStr(t.kg) : '';
+}
+
 function setUnit(u) {
   state.unit = u;
-  localStorage.setItem('ledger_unit', u);
-  if (state.data) render({ ok: true, today: state.today, season: state.season, seasons: state.seasons, data: state.data });
+  store('ledger_unit', u);
+  renderUnitToggle();
+  autoCalcWeight();
+  refreshWeightDisplays();
 }
 
 function changePw() {
@@ -304,11 +454,12 @@ function changePw() {
 // ---------- 啟動 ----------
 
 function start() {
+  localStorage.removeItem('ledger_cache'); // 舊版快取格式,清掉
   if (state.pw) {
     showMain();
     // 先用快取秒開,背景再更新
     var cached = null;
-    try { cached = JSON.parse(localStorage.getItem('ledger_cache') || 'null'); } catch (e) {}
+    try { cached = JSON.parse(localStorage.getItem('ledger_cache2') || 'null'); } catch (e) {}
     if (cached && cached.ok) render(cached);
     api({ action: 'init' }, !!cached).then(function (r) {
       if (!r.ok) { fail(r); return; }
@@ -329,7 +480,10 @@ $('pwInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') d
 $('pwInput2').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
 
 $('saveBtn').addEventListener('click', save);
-$('fDate').addEventListener('change', prefillFromDate);
+$('cancelEditBtn').addEventListener('click', cancelEdit);
+$('fCat').addEventListener('change', onCatChange);
+$('fPrice').addEventListener('input', autoCalcWeight);
+$('fRevenue').addEventListener('input', autoCalcWeight);
 $('fWeight').addEventListener('input', updateWeightHint);
 $('unitJin').addEventListener('click', function () { setUnit('jin'); });
 $('unitKg').addEventListener('click', function () { setUnit('kg'); });
@@ -337,13 +491,9 @@ $('seasonSel').addEventListener('change', function () { switchSeason(this.value)
 
 $('recordList').addEventListener('click', function (e) {
   var delBtn = e.target.closest('.rec-del');
-  if (delBtn) { del(delBtn.getAttribute('data-date')); return; }
+  if (delBtn) { del(delBtn.getAttribute('data-id')); return; }
   var rec = e.target.closest('.rec');
-  if (rec) {
-    $('fDate').value = rec.getAttribute('data-date');
-    prefillFromDate();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+  if (rec) startEdit(rec.getAttribute('data-id'));
 });
 
 $('settingsBtn').addEventListener('click', function () { $('settingsModal').classList.remove('hidden'); });
