@@ -1,6 +1,12 @@
 (function () {
 'use strict';
 
+// 防點擊劫持:不允許本頁被嵌進別人網站的 iframe(避免透明覆蓋騙點擊/騙密碼)
+if (window.top !== window.self) {
+  try { window.top.location = window.location.href; } catch (e) { document.body.textContent = ''; }
+  return;
+}
+
 var GAS = window.CONFIG.gasUrl;
 var JIN_KG = 0.6; // 1 台斤 = 0.6 公斤
 var $ = function (id) { return document.getElementById(id); };
